@@ -1,0 +1,250 @@
+{
+	"metadata": {
+		"version": 1
+	},
+	"application": {
+		"name": "outyet",
+		"language": "GOLANG"
+	},
+	"pipeline": {
+		"segments": [
+			{
+				"name": "Build",
+				"segment_type": "build",
+				"job_steps": [
+					{
+						"name": "Get Dependencies",
+						"definition": "Get Dependencies",
+						"command": "go get -t -d ./...",
+						"properties": []
+					},
+					{
+						"name": "Lint",
+						"definition": "Lint",
+						"command": "set +e; gometalinter ./... --cyclo-over=10 --line-length=120 --deadline=180s --vendored-linters  --checkstyle --skip=test --skip=mock --skip=vendor --exclude=_test.go --exclude=.pb.go \u003e report.xml; set -e",
+						"properties": []
+					},
+					{
+						"name": "Unit Tests and Coverage",
+						"definition": "Unit Tests and Coverage",
+						"command": "ginkgo -cover -r -v -skipPackage=pb -outputdir=./ | tee ginkgo.output \u0026\u0026 cat ginkgo.output 2\u003e\u00261 | go-junit-report \u003e test.xml \u0026\u0026 gocov convert *.coverprofile | gocov-xml \u003e coverage.xml",
+						"properties": []
+					},
+					{
+						"name": "Build",
+						"definition": "Build",
+						"command": "cd outyet\npwd\ngo build\n",
+						"properties": []
+					},
+					{
+						"name": "GetTools",
+						"definition": "GetTools",
+						"command": "go get github.com/axw/gocov/gocov\ngo get github.com/AlekSi/gocov-xml\ncp ${GOPATH}/bin/gocov* .",
+						"properties": []
+					},
+					{
+						"name": "Build Instrumented",
+						"definition": "Build Instrumented",
+						"command": "cd outyet\ngo test -c -coverpkg=all -covermode=count -o ((application.name))-instrumented",
+						"properties": []
+					}
+				],
+				"exit_actions": {
+					"default": {
+						"fetch_logs": true,
+						"notifications": [],
+						"code_analysis": {
+							"publish": true,
+							"properties": []
+						},
+						"delete_instances": true
+					}
+				},
+				"deployment_strategy": {
+					"canary_watch_time": "",
+					"update_watch_time": "",
+					"serial": false
+				},
+				"application_init": {
+					"command": "",
+					"arguments": null
+				},
+				"packages": [
+					{
+						"name": "((application.name))",
+						"dependencies": [],
+						"downloads": [],
+						"files": [
+							"((application.name))*"
+						],
+						"package_install_command": "",
+						"installed_path": ""
+					}
+				],
+				"instance_tags": [
+					{
+						"name": "application.name",
+						"value": "((application.name))"
+					}
+				]
+			},
+			{
+				"name": "Integration",
+				"segment_type": "integration",
+				"run_after": [
+					"Build"
+				],
+				"exit_actions": {
+					"default": {
+						"fetch_logs": true,
+						"notifications": [],
+						"code_analysis": null,
+						"delete_instances": true
+					}
+				},
+				"properties": [
+					{
+						"name": "consul.tag",
+						"value": "((application.shortsha))"
+					},
+					{
+						"name": "consul.domain",
+						"value": "consul"
+					},
+					{
+						"name": "consul.environment",
+						"value": "DEV"
+					},
+					{
+						"name": "consul.datacenter",
+						"value": "dc1"
+					},
+					{
+						"name": "consul.servicename",
+						"value": "((application.name))-INT-((application.branch))-((application.shortsha))"
+					},
+					{
+						"name": "consul.joinservers",
+						"value": "[10.21.128.4, 10.21.128.5, 10.21.128.6]"
+					}
+				],
+				"deployment_strategy": {
+					"canaries": 1,
+					"max_in_flight": 1,
+					"canary_watch_time": "5000-30000",
+					"update_watch_time": "5000-30000",
+					"serial": false
+				},
+				"application_init": {
+					"command": "outyet",
+					"arguments": [
+						"-http:8099"
+					]
+				},
+				"package_dependencies": [
+					"((application.name))"
+				],
+				"instance_tags": [
+					{
+						"name": "application.name",
+						"value": "((application.name))"
+					}
+				],
+				"instance_groups": [
+					{
+						"name": "((application.name))",
+						"number_of_instances": 1,
+						"persistent_disk_type": "",
+						"vm_type": "default",
+						"os_type": "default",
+						"networks": [
+							"((deploy.target.network.integration))"
+						],
+						"availability_zones": [
+							"((deploy.target.zone.integration))"
+						],
+						"dependencies": [
+							{
+								"name": "consul",
+								"release": "consul",
+								"provides": [
+									{
+										"name": "consul_servers.as",
+										"value": "consul_1"
+									}
+								],
+								"consumes": [
+									{
+										"name": "consul_servers.from",
+										"value": "consul_1"
+									}
+								],
+								"properties": [
+									{
+										"name": "consul.servicename",
+										"value": "((consul.servicename))"
+									},
+									{
+										"name": "consul.environment",
+										"value": "((consul.environment))"
+									},
+									{
+										"name": "consul.datacenter",
+										"value": "((consul.datacenter))"
+									},
+									{
+										"name": "consul.server",
+										"value": "false"
+									},
+									{
+										"name": "consul.joinservers",
+										"value": "((consul.joinservers))"
+									},
+									{
+										"name": "calculi.intermediate.cert",
+										"value": "grsecret:tls.cert"
+									},
+									{
+										"name": "calculi.intermediate.key",
+										"value": "grsecret:tls.key"
+									}
+								],
+								"deployment_strategy": {
+									"canary_watch_time": "",
+									"update_watch_time": "",
+									"serial": false
+								}
+							}
+						]
+					}
+				]
+			}
+		],
+		"exit_actions": {
+			"default": {
+				"fetch_logs": true,
+				"notifications": [],
+				"code_analysis": {
+					"publish": true,
+					"properties": []
+				},
+				"delete_instances": true
+			}
+		},
+		"default_properties": null,
+		"deployment_files": [],
+		"application_init": {
+			"command": "bin/start-service.sh",
+			"arguments": []
+		},
+		"releases": [
+			{
+				"name": "consul",
+				"version": "latest"
+			}
+		]
+	},
+	"organization": {
+		"orgname": "Tutorial"
+	}
+}
